@@ -522,7 +522,12 @@ def check_dataset(data, autodownload=True):
     if not path.is_absolute():
         path = (ROOT / path).resolve()
         data['path'] = path  # download scripts
-    for k in 'train', 'val', 'test':
+    
+    ## jc: resolve paths by including test- option
+    ks = ['train', 'val', 'test'] + [k for k in data.keys() if k.startswith('test-')]
+    
+    # for k in 'train', 'val', 'test':  jc: replaced with the line below
+    for k in ks:
         if data.get(k):  # prepend path
             if isinstance(data[k], str):
                 x = (path / data[k]).resolve()
@@ -531,6 +536,7 @@ def check_dataset(data, autodownload=True):
                 data[k] = str(x)
             else:
                 data[k] = [str((path / x).resolve()) for x in data[k]]
+    # jc: end of block
 
     # Parse yaml
     train, val, test, s = (data.get(x) for x in ('train', 'val', 'test', 'download'))
@@ -917,7 +923,7 @@ def non_max_suppression(
     # min_wh = 2  # (pixels) minimum box width and height
     max_wh = 7680  # (pixels) maximum box width and height
     max_nms = 30000  # maximum number of boxes into torchvision.ops.nms()
-    time_limit = 0.5 + 0.05 * bs  # seconds to quit after
+    time_limit = 10.0 #0.5 + 0.05 * bs  # seconds to quit after, jc: modified
     redundant = True  # require redundant detections
     multi_label &= nc > 1  # multiple labels per box (adds 0.5ms/img)
     merge = False  # use merge-NMS
@@ -993,7 +999,7 @@ def non_max_suppression(
         if mps:
             output[xi] = output[xi].to(device)
         if (time.time() - t) > time_limit:
-            LOGGER.warning(f'WARNING ⚠️ NMS time limit {time_limit:.3f}s exceeded')
+            LOGGER.warning(f'WARNING ⚠️ NMS time limit {time_limit:.3f}s exceeded')  # jc: supress the this warning
             break  # time limit exceeded
 
     return output

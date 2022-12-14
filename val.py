@@ -26,6 +26,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+from pandas import DataFrame
 import torch
 from tqdm import tqdm
 
@@ -124,6 +125,8 @@ def run(
         plots=True,
         callbacks=Callbacks(),
         compute_loss=None,
+        agnostic_nms=False,  # jc: agnostic NMS
+        save_results=False,  # jc: save terminal output results to csv
 ):
     # Initialize/load model and set device
     training = model is not None
@@ -170,7 +173,15 @@ def run(
                               f'classes). Pass correct combination of --weights and --data that are trained together.'
         model.warmup(imgsz=(1 if pt else batch_size, 3, imgsz, imgsz))  # warmup
         pad, rect = (0.0, False) if task == 'speed' else (0.5, pt)  # square inference for benchmarks
-        task = task if task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
+        
+        # jc: assign the task - not that if the task value does not fall in the acceptable task list then it default to 'val'
+        if task in ('train', 'val', 'test') or task.startswith('test-'):
+            task = task
+        else:
+            task = 'val'
+       ## jc: end of block
+        
+        # task = task if task in ('train', 'val', 'test') else 'val'  # jc: original version of the block above, path to train/val/test images
         dataloader = create_dataloader(data[task],
                                        imgsz,
                                        batch_size,
@@ -216,12 +227,13 @@ def run(
         targets[:, 2:] *= torch.tensor((width, height, width, height), device=device)  # to pixels
         lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
         with dt[2]:
+            agnostic_behaviour = True if single_cls or agnostic_nms else False  # specify the behavior
             preds = non_max_suppression(preds,
                                         conf_thres,
                                         iou_thres,
                                         labels=lb,
                                         multi_label=True,
-                                        agnostic=single_cls,
+                                        agnostic=agnostic_behaviour,  ## jc: added behavior
                                         max_det=max_det)
 
         # Metrics
@@ -276,17 +288,28 @@ def run(
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
     nt = np.bincount(stats[3].astype(int), minlength=nc)  # number of targets per class
-
+    
     # Print results
     pf = '%22s' + '%11i' * 2 + '%11.3g' * 4  # print format
     LOGGER.info(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
     if nt.sum() == 0:
         LOGGER.warning(f'WARNING ⚠️ no labels found in {task} set, can not compute metrics without labels')
+     
+    jc_data = [['all', seen, nt.sum(), mp, mr, map50, map]]  # jc: track the output of the terminal at the end of validation, for saving as csv file
 
     # Print results per class
     if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
         for i, c in enumerate(ap_class):
             LOGGER.info(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
+            jc_data.append([names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]]) # jc: add this row
+            
+    # jc: save results to csv if specified in CLI
+    if save_results:
+        DataFrame(
+            data=jc_data, columns=['class', 'images', 'labels', 'P', 'R', 'mAP@0.5', 'mAP@0.05:0.95']).to_csv(
+            os.path.join(save_dir, 'terminal_output.csv'), index=False
+        )
+   # jc: end of block
 
     # Print speeds
     t = tuple(x.t / seen * 1E3 for x in dt)  # speeds per image
@@ -360,6 +383,8 @@ def parse_opt():
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
+    parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')  # jc: modifiy agnostic behavior
+    parser.add_argument('--save-results', action='store_true', help='save mAP, precision, and sensitivity results to csv file')  # jc: save terminal output
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML
     opt.save_json |= opt.data.endswith('coco.yaml')
@@ -371,7 +396,7 @@ def parse_opt():
 def main(opt):
     check_requirements(exclude=('tensorboard', 'thop'))
 
-    if opt.task in ('train', 'val', 'test'):  # run normally
+    if opt.task in ('train', 'val', 'test') or opt.task.startswith('test-'):  # jc: added the second or to handle extra datasets,  run normally
         if opt.conf_thres > 0.001:  # https://github.com/ultralytics/yolov5/issues/1466
             LOGGER.info(f'WARNING ⚠️ confidence threshold {opt.conf_thres} > 0.001 produces invalid results')
         if opt.save_hybrid:

@@ -63,7 +63,7 @@ from utils.torch_utils import (EarlyStopping, ModelEMA, de_parallel, select_devi
 LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv('RANK', -1))
 WORLD_SIZE = int(os.getenv('WORLD_SIZE', 1))
-GIT_INFO = check_git_info()
+GIT_INFO = ''  # jc: set this equal to empty string since the function does not work on a fork of the repo, check_git_info() 
 
 
 def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictionary
@@ -420,7 +420,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                         verbose=True,
                         plots=plots,
                         callbacks=callbacks,
-                        compute_loss=compute_loss)  # val best model with plots
+                        compute_loss=compute_loss,
+                        save_results=True)  # val best model with plots
                     if is_coco:
                         callbacks.run('on_fit_epoch_end', list(mloss) + list(results) + lr, epoch, best_fitness, fi)
 
