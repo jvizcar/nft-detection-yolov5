@@ -306,7 +306,7 @@ def run(
     # jc: save results to csv if specified in CLI
     if save_results:
         DataFrame(
-            data=jc_data, columns=['class', 'images', 'labels', 'P', 'R', 'mAP@0.5', 'mAP@0.05:0.95']).to_csv(
+            data=jc_data, columns=['class', 'images', 'labels', 'P', 'R', 'mAP50', 'mAP50-95']).to_csv(
             os.path.join(save_dir, 'terminal_output.csv'), index=False
         )
    # jc: end of block
